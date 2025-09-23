@@ -1,0 +1,523 @@
+"""
+Agente de Análise Exploratória de Dados (EDA)
+Desenvolvido para análise inteligente de arquivos CSV
+
+Framework: FastAPI + React + OpenAI GPT-4o-mini
+Autor: Fernando MX - Curso de Agentes Autônomos
+"""
+
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel
+from typing import List, Dict, Any, Optional
+import pandas as pd
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as px
+import plotly.graph_objects as go
+import plotly.io as pio
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+import io
+import base64
+import json
+import os
+import uuid
+import asyncio
+from datetime import datetime
+from motor.motor_asyncio import AsyncIOMotorClient
+from dotenv import load_dotenv
+import logging
+from pathlib import Path
+
+# Carregar variáveis de ambiente
+load_dotenv("config.env")
+
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Inicializar FastAPI
+app = FastAPI(
+    title="Agente de Análise Exploratória de Dados",
+    description="Sistema inteligente para análise de arquivos CSV com IA",
+    version="1.0.0"
+)
+
+# Configurar CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Configuração do MongoDB
+MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
+DB_NAME = os.getenv("DB_NAME", "agente_eda_db")
+
+# Cliente MongoDB
+mongo_client = None
+database = None
+
+# Modelos Pydantic
+class ChatMessage(BaseModel):
+    message: str
+    session_id: str
+
+class AnalysisResponse(BaseModel):
+    response: str
+    charts: Optional[List[Dict]] = []
+    statistics: Optional[Dict] = {}
+
+class SessionData(BaseModel):
+    session_id: str
+    dataset_info: Dict
+    conversation_history: List[Dict]
+    created_at: datetime
+
+# Armazenamento em memória para datasets (em produção, usar Redis ou similar)
+datasets_storage = {}
+sessions_storage = {}
+
+@app.on_event("startup")
+async def startup_event():
+    """Inicializar conexões na inicialização"""
+    global mongo_client, database
+    try:
+        mongo_client = AsyncIOMotorClient(MONGO_URL)
+        database = mongo_client[DB_NAME]
+        logger.info("Conectado ao MongoDB com sucesso")
+    except Exception as e:
+        logger.warning(f"Erro ao conectar MongoDB: {e}. Usando armazenamento em memória.")
+        database = None
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Fechar conexões na finalização"""
+    if mongo_client:
+        mongo_client.close()
+
+# Função para análise exploratória de dados
+class DataAnalyzer:
+    def __init__(self, df: pd.DataFrame):
+        self.df = df
+        self.numeric_columns = df.select_dtypes(include=[np.number]).columns.tolist()
+        self.categorical_columns = df.select_dtypes(include=['object', 'category']).columns.tolist()
+    
+    def get_basic_info(self):
+        """Informações básicas do dataset"""
+        return {
+            "shape": self.df.shape,
+            "columns": self.df.columns.tolist(),
+            "dtypes": self.df.dtypes.astype(str).to_dict(),
+            "missing_values": self.df.isnull().sum().to_dict(),
+            "numeric_columns": self.numeric_columns,
+            "categorical_columns": self.categorical_columns,
+            "memory_usage": f"{self.df.memory_usage(deep=True).sum() / 1024**2:.2f} MB"
+        }
+    
+    def get_descriptive_statistics(self):
+        """Estatísticas descritivas"""
+        stats = {}
+        
+        # Estatísticas numéricas
+        if self.numeric_columns:
+            numeric_stats = self.df[self.numeric_columns].describe()
+            stats["numeric"] = numeric_stats.to_dict()
+        
+        # Estatísticas categóricas
+        if self.categorical_columns:
+            categorical_stats = {}
+            for col in self.categorical_columns:
+                categorical_stats[col] = {
+                    "unique_count": self.df[col].nunique(),
+                    "most_frequent": self.df[col].mode().iloc[0] if not self.df[col].empty else None,
+                    "frequency_top": self.df[col].value_counts().iloc[0] if not self.df[col].empty else 0
+                }
+            stats["categorical"] = categorical_stats
+        
+        return stats
+    
+    def detect_outliers(self):
+        """Detectar outliers usando método IQR"""
+        outliers_info = {}
+        
+        for col in self.numeric_columns:
+            Q1 = self.df[col].quantile(0.25)
+            Q3 = self.df[col].quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+            
+            outliers = self.df[(self.df[col] < lower_bound) | (self.df[col] > upper_bound)]
+            
+            outliers_info[col] = {
+                "count": len(outliers),
+                "percentage": (len(outliers) / len(self.df)) * 100,
+                "bounds": {"lower": lower_bound, "upper": upper_bound}
+            }
+        
+        return outliers_info
+    
+    def get_correlation_matrix(self):
+        """Matriz de correlação para variáveis numéricas"""
+        if len(self.numeric_columns) > 1:
+            correlation = self.df[self.numeric_columns].corr()
+            return correlation.to_dict()
+        return {}
+    
+    def generate_histogram(self, column: str):
+        """Gerar histograma para uma coluna"""
+        if column not in self.df.columns:
+            return None
+        
+        plt.figure(figsize=(10, 6))
+        plt.hist(self.df[column].dropna(), bins=30, alpha=0.7, color='skyblue', edgecolor='black')
+        plt.title(f'Distribuição de {column}')
+        plt.xlabel(column)
+        plt.ylabel('Frequência')
+        plt.grid(True, alpha=0.3)
+        
+        # Converter para base64
+        img_buffer = io.BytesIO()
+        plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight')
+        img_buffer.seek(0)
+        img_base64 = base64.b64encode(img_buffer.read()).decode()
+        plt.close()
+        
+        return img_base64
+    
+    def generate_correlation_heatmap(self):
+        """Gerar heatmap de correlação"""
+        if len(self.numeric_columns) < 2:
+            return None
+        
+        plt.figure(figsize=(12, 8))
+        correlation = self.df[self.numeric_columns].corr()
+        sns.heatmap(correlation, annot=True, cmap='coolwarm', center=0, 
+                   square=True, linewidths=0.5)
+        plt.title('Matriz de Correlação')
+        plt.tight_layout()
+        
+        # Converter para base64
+        img_buffer = io.BytesIO()
+        plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight')
+        img_buffer.seek(0)
+        img_base64 = base64.b64encode(img_buffer.read()).decode()
+        plt.close()
+        
+        return img_base64
+    
+    def generate_scatter_plot(self, x_col: str, y_col: str, color_col: str = None):
+        """Gerar gráfico de dispersão"""
+        if x_col not in self.df.columns or y_col not in self.df.columns:
+            return None
+        
+        plt.figure(figsize=(10, 6))
+        
+        if color_col and color_col in self.df.columns:
+            scatter = plt.scatter(self.df[x_col], self.df[y_col], 
+                                c=self.df[color_col], alpha=0.6, cmap='viridis')
+            plt.colorbar(scatter, label=color_col)
+        else:
+            plt.scatter(self.df[x_col], self.df[y_col], alpha=0.6, color='skyblue')
+        
+        plt.xlabel(x_col)
+        plt.ylabel(y_col)
+        plt.title(f'{y_col} vs {x_col}')
+        plt.grid(True, alpha=0.3)
+        
+        # Converter para base64
+        img_buffer = io.BytesIO()
+        plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight')
+        img_buffer.seek(0)
+        img_base64 = base64.b64encode(img_buffer.read()).decode()
+        plt.close()
+        
+        return img_base64
+
+# Integração com IA usando emergentintegrations
+async def analyze_with_ai(question: str, dataset_info: Dict, conversation_history: List = None):
+    """Analisar pergunta usando IA e gerar resposta contextualizada"""
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        from dotenv import load_dotenv
+        load_dotenv("config.env")
+        
+        # Configurar chat com IA
+        chat = LlmChat(
+            api_key=os.getenv("EMERGENT_LLM_KEY"),
+            session_id=str(uuid.uuid4()),
+            system_message="""Você é um especialista em análise exploratória de dados (EDA) que trabalha com arquivos CSV.
+            
+            Suas responsabilidades:
+            1. Analisar dados estatísticos e identificar padrões
+            2. Detectar anomalias e outliers
+            3. Sugerir visualizações relevantes
+            4. Gerar insights e conclusões baseadas nos dados
+            5. Responder em português brasileiro de forma clara e técnica
+            
+            Sempre baseie suas respostas nos dados fornecidos e sugira análises específicas quando apropriado.
+            Use um tom acadêmico mas acessível."""
+        ).with_model("openai", "gpt-4o-mini")
+        
+        # Construir contexto com informações do dataset
+        context = f"""
+        INFORMAÇÕES DO DATASET:
+        - Formato: {dataset_info.get('shape', 'N/A')}
+        - Colunas: {', '.join(dataset_info.get('columns', []))}
+        - Colunas Numéricas: {', '.join(dataset_info.get('numeric_columns', []))}
+        - Colunas Categóricas: {', '.join(dataset_info.get('categorical_columns', []))}
+        - Valores Ausentes: {dataset_info.get('missing_values', {})}
+        
+        PERGUNTA DO USUÁRIO: {question}
+        """
+        
+        # Adicionar histórico se disponível
+        if conversation_history:
+            context += "\n\nHISTÓRICO DA CONVERSA:\n"
+            for msg in conversation_history[-3:]:  # Últimas 3 mensagens
+                context += f"- {msg.get('type', 'user')}: {msg.get('content', '')}\n"
+        
+        # Enviar mensagem para IA
+        user_message = UserMessage(text=context)
+        response = await chat.send_message(user_message)
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Erro na análise com IA: {e}")
+        return f"Erro ao processar pergunta com IA: {str(e)}"
+
+# Endpoints da API
+
+@app.post("/api/upload-csv")
+async def upload_csv(file: UploadFile = File(...)):
+    """Upload e análise inicial de arquivo CSV"""
+    try:
+        # Verificar se é arquivo CSV
+        if not file.filename.endswith('.csv'):
+            raise HTTPException(status_code=400, detail="Apenas arquivos CSV são aceitos")
+        
+        # Ler arquivo CSV
+        contents = await file.read()
+        df = pd.read_csv(io.StringIO(contents.decode('utf-8')))
+        
+        # Gerar ID da sessão
+        session_id = str(uuid.uuid4())
+        
+        # Analisar dados
+        analyzer = DataAnalyzer(df)
+        basic_info = analyzer.get_basic_info()
+        descriptive_stats = analyzer.get_descriptive_statistics()
+        outliers_info = analyzer.detect_outliers()
+        correlation_matrix = analyzer.get_correlation_matrix()
+        
+        # Armazenar dataset e informações
+        datasets_storage[session_id] = {
+            "dataframe": df,
+            "analyzer": analyzer,
+            "basic_info": basic_info,
+            "descriptive_stats": descriptive_stats,
+            "outliers_info": outliers_info,
+            "correlation_matrix": correlation_matrix,
+            "uploaded_at": datetime.now()
+        }
+        
+        # Inicializar sessão
+        sessions_storage[session_id] = {
+            "conversation_history": [],
+            "created_at": datetime.now()
+        }
+        
+        # Gerar análise inicial automática com IA
+        initial_analysis = await analyze_with_ai(
+            "Faça uma análise inicial e resumo geral deste dataset, destacando os pontos mais importantes",
+            basic_info
+        )
+        
+        return {
+            "session_id": session_id,
+            "basic_info": basic_info,
+            "initial_analysis": initial_analysis,
+            "message": f"Dataset carregado com sucesso! {basic_info['shape'][0]} linhas e {basic_info['shape'][1]} colunas."
+        }
+        
+    except Exception as e:
+        logger.error(f"Erro no upload: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao processar arquivo: {str(e)}")
+
+@app.post("/api/chat", response_model=AnalysisResponse)
+async def chat_with_data(message: ChatMessage):
+    """Chat conversacional com análise de dados"""
+    try:
+        session_id = message.session_id
+        user_message = message.message
+        
+        # Verificar se sessão existe
+        if session_id not in datasets_storage:
+            raise HTTPException(status_code=404, detail="Sessão não encontrada. Faça upload do CSV primeiro.")
+        
+        # Obter dados da sessão
+        session_data = datasets_storage[session_id]
+        conversation_history = sessions_storage[session_id]["conversation_history"]
+        
+        df = session_data["dataframe"]
+        analyzer = session_data["analyzer"]
+        basic_info = session_data["basic_info"]
+        
+        # Adicionar mensagem do usuário ao histórico
+        conversation_history.append({
+            "type": "user",
+            "content": user_message,
+            "timestamp": datetime.now()
+        })
+        
+        # Analisar pergunta e gerar resposta com IA
+        ai_response = await analyze_with_ai(user_message, basic_info, conversation_history)
+        
+        # Gerar gráficos baseados na pergunta
+        charts = []
+        
+        # Lógica para detectar tipo de visualização necessária
+        message_lower = user_message.lower()
+        
+        if "histograma" in message_lower or "distribuição" in message_lower:
+            # Gerar histogramas para colunas numéricas principais
+            for col in analyzer.numeric_columns[:3]:  # Máximo 3 gráficos
+                chart_data = analyzer.generate_histogram(col)
+                if chart_data:
+                    charts.append({
+                        "type": "histogram",
+                        "title": f"Distribuição de {col}",
+                        "data": chart_data
+                    })
+        
+        elif "correlação" in message_lower or "correlacao" in message_lower:
+            # Gerar heatmap de correlação
+            heatmap_data = analyzer.generate_correlation_heatmap()
+            if heatmap_data:
+                charts.append({
+                    "type": "heatmap",
+                    "title": "Matriz de Correlação",
+                    "data": heatmap_data
+                })
+        
+        elif "dispersão" in message_lower or "scatter" in message_lower:
+            # Gerar scatter plot com as duas primeiras colunas numéricas
+            if len(analyzer.numeric_columns) >= 2:
+                scatter_data = analyzer.generate_scatter_plot(
+                    analyzer.numeric_columns[0], 
+                    analyzer.numeric_columns[1]
+                )
+                if scatter_data:
+                    charts.append({
+                        "type": "scatter",
+                        "title": f"{analyzer.numeric_columns[1]} vs {analyzer.numeric_columns[0]}",
+                        "data": scatter_data
+                    })
+        
+        # Gerar estatísticas relevantes
+        statistics = {
+            "outliers": session_data["outliers_info"],
+            "correlations": session_data["correlation_matrix"],
+            "basic_stats": session_data["descriptive_stats"]
+        }
+        
+        # Adicionar resposta ao histórico
+        conversation_history.append({
+            "type": "assistant",
+            "content": ai_response,
+            "charts": charts,
+            "timestamp": datetime.now()
+        })
+        
+        # Salvar no banco se disponível
+        if database is not None:
+            try:
+                await database.conversations.update_one(
+                    {"session_id": session_id},
+                    {"$set": {"conversation_history": conversation_history}},
+                    upsert=True
+                )
+            except Exception as e:
+                logger.warning(f"Erro ao salvar no MongoDB: {e}")
+        
+        return AnalysisResponse(
+            response=ai_response,
+            charts=charts,
+            statistics=statistics
+        )
+        
+    except Exception as e:
+        logger.error(f"Erro no chat: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao processar mensagem: {str(e)}")
+
+@app.get("/api/session/{session_id}/info")
+async def get_session_info(session_id: str):
+    """Obter informações da sessão"""
+    if session_id not in datasets_storage:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada")
+    
+    session_data = datasets_storage[session_id]
+    return {
+        "basic_info": session_data["basic_info"],
+        "descriptive_stats": session_data["descriptive_stats"],
+        "outliers_info": session_data["outliers_info"],
+        "uploaded_at": session_data["uploaded_at"]
+    }
+
+@app.get("/api/session/{session_id}/history")
+async def get_conversation_history(session_id: str):
+    """Obter histórico da conversa"""
+    if session_id not in sessions_storage:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada")
+    
+    return sessions_storage[session_id]["conversation_history"]
+
+@app.delete("/api/session/{session_id}")
+async def delete_session(session_id: str):
+    """Deletar sessão e dados associados"""
+    if session_id in datasets_storage:
+        del datasets_storage[session_id]
+    if session_id in sessions_storage:
+        del sessions_storage[session_id]
+    
+    return {"message": "Sessão deletada com sucesso"}
+
+@app.get("/api/health")
+async def health_check():
+    """Verificação de saúde da API"""
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now(),
+        "active_sessions": len(datasets_storage),
+        "mongodb_connected": database is not None
+    }
+
+@app.get("/")
+async def root():
+    """Endpoint raiz"""
+    return {
+        "message": "Agente de Análise Exploratória de Dados",
+        "version": "1.0.0",
+        "description": "Sistema inteligente para análise de arquivos CSV",
+        "endpoints": [
+            "/api/upload-csv",
+            "/api/chat",
+            "/api/session/{session_id}/info",
+            "/api/session/{session_id}/history",
+            "/docs"
+        ]
+    }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
