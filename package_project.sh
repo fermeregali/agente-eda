@@ -60,8 +60,8 @@ FUNCIONALIDADES:
 ✅ Análise de correlações
 ✅ Memória persistente
 
-Desenvolvido por: Fernando MX
-Framework: FastAPI + React + OpenAI GPT-4o-mini
+Desenvolvido por: Fernando Meregali Xavier
+Framework: FastAPI + React + Groq DeepSeek R1 Distill Llama 70B
 EOF
 
 # Criar arquivo ZIP
