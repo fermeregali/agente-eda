@@ -3,7 +3,7 @@
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-18.2+-blue.svg)](https://reactjs.org)
-[![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4o--mini-purple.svg)](https://openai.com)
+[![Groq](https://img.shields.io/badge/Groq-DeepSeek%20R1-green.svg)](https://groq.com)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Sistema inteligente para análise exploratória de dados em arquivos CSV com interface conversacional e IA integrada.
@@ -28,7 +28,7 @@ Este é um **Agente de IA para Análise Exploratória de Dados (EDA)** desenvolv
 ### Stack Tecnológico
 - **Backend**: FastAPI (Python) - API REST moderna e rápida
 - **Frontend**: React - Interface de usuário responsiva
-- **IA**: OpenAI GPT-4o-mini - Análises inteligentes contextualizadas
+- **IA**: Groq (DeepSeek R1) - Análises inteligentes contextualizadas
 - **Banco**: MongoDB - Armazenamento de sessões e histórico
 - **Visualizações**: Matplotlib + Seaborn - Gráficos de alta qualidade
 - **Análise**: Pandas + NumPy + Scikit-learn - Processamento de dados
@@ -210,7 +210,7 @@ Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para de
 
 ## 🙏 Agradecimentos
 
-- OpenAI pela API GPT-4o-mini
+- Groq pela API DeepSeek R1 Distill Llama 70B
 - FastAPI pela framework moderna
 - React pela interface de usuário
 - Comunidade Python pela excelente ecossistema

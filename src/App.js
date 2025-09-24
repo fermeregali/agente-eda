@@ -279,11 +279,8 @@ function App() {
             🤖 Agente de Análise Exploratória de Dados
           </h1>
           <p className="text-lg text-gray-600">
-            Sistema inteligente para análise de arquivos CSV com IA
+            Agente inteligente para análise de arquivos CSV com IA
           </p>
-          <div className="mt-2 text-sm text-gray-500">
-            Desenvolvido para análise acadêmica • Framework: FastAPI + React + OpenAI GPT-4o-mini
-          </div>
         </header>
 
         {/* Error Display */}
@@ -409,8 +406,8 @@ function App() {
         {/* Footer */}
         <footer className="mt-8 text-center text-sm text-gray-500">
           <p>
-            Desenvolvido para atividade acadêmica de Agentes Autônomos • 
-            Tecnologias: FastAPI, React, OpenAI GPT-4o-mini, MongoDB
+            Desenvolvido Fernando Meregali Xavier • 
+            Tecnologias: FastAPI, React, Groq LLM-> deepseek-r1-distill-llama-70b, MongoDB
           </p>
         </footer>
       </div>
