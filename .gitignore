@@ -135,3 +135,5 @@ agente-eda-entrega/
 node_modules/
 venv/
 .env
+sample_data/creditcard.csv
+config.env

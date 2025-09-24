@@ -126,7 +126,7 @@ Após seguir estes passos, você terá:
 ### ✅ Projeto Completo
 - **Backend**: FastAPI com análise de dados
 - **Frontend**: React com interface moderna
-- **IA**: Integração com OpenAI GPT-4o-mini
+- **IA**: Integração com Groq DeepSeek R1 Distill Llama 70B
 - **Testes**: Bateria completa de validação
 - **Deploy**: Scripts automatizados
 

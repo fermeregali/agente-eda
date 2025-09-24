@@ -11,7 +11,7 @@
 ### Arquitetura Selecionada
 - **Backend**: FastAPI (Python) - Framework moderno e rápido para APIs REST
 - **Frontend**: React - Biblioteca JavaScript para interfaces de usuário modernas
-- **IA**: OpenAI GPT-4o-mini via emergentintegrations - Análises inteligentes em português
+- **IA**: Groq DeepSeek R1 Distill Llama 70B - Análises inteligentes em português
 - **Banco de Dados**: MongoDB - Armazenamento NoSQL para sessões e histórico
 - **Visualizações**: Matplotlib + Seaborn - Bibliotecas Python para gráficos de alta qualidade
 
@@ -53,7 +53,7 @@ Agente EDA
 1. **Upload**: Usuário carrega arquivo CSV via drag-and-drop
 2. **Análise Inicial**: Sistema analisa automaticamente o dataset
 3. **Interação**: Usuário faz perguntas em linguagem natural
-4. **Processamento IA**: GPT-4o-mini analisa e responde baseado nos dados
+4. **Processamento IA**: Groq DeepSeek R1 Distill Llama 70B analisa e responde baseado nos dados
 5. **Visualização**: Gráficos são gerados automaticamente quando relevantes
 6. **Memória**: Histórico é mantido para continuidade da conversa
 
@@ -66,7 +66,7 @@ Agente EDA
 - Geração de visualizações
 
 #### Chat Engine (Motor Conversacional)
-- Integração com OpenAI GPT-4o-mini
+- Integração com Groq DeepSeek R1 Distill Llama 70B
 - Contextualização baseada nos dados
 - Sugestões automáticas de análises
 - Memória de conversas anteriores
@@ -309,8 +309,8 @@ Esta análise confirma que o dataset tem excelente potencial para desenvolviment
 Agente de Análise Exploratória de Dados (EDA)
 Desenvolvido para análise inteligente de arquivos CSV
 
-Framework: FastAPI + React + OpenAI GPT-4o-mini
-Autor: Fernando MX - Curso de Agentes Autônomos
+Framework: FastAPI + React + Groq DeepSeek R1 Distill Llama 70B
+Autor: Fernando Meregali Xavier
 """
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
@@ -444,7 +444,7 @@ Este **Agente de Análise Exploratória de Dados** representa uma solução comp
 
 O sistema atende completamente aos requisitos da atividade, oferecendo um agente verdadeiramente autônomo capaz de realizar análises exploratórias completas e fornecer insights valiosos através de uma interface conversacional natural.
 
-**Tecnologias utilizadas**: FastAPI, React, OpenAI GPT-4o-mini, MongoDB, Matplotlib, Seaborn, Pandas, NumPy, Scikit-learn
+**Tecnologias utilizadas**: FastAPI, React, Groq DeepSeek R1 Distill Llama 70B, MongoDB, Matplotlib, Seaborn, Pandas, NumPy, Scikit-learn
 
 **Características únicas**:
 - Funciona com qualquer arquivo CSV (não específico para fraude de cartão)
@@ -455,7 +455,7 @@ O sistema atende completamente aos requisitos da atividade, oferecendo um agente
 
 ---
 
-**Desenvolvido por**: Fernando MX  
-**Framework**: FastAPI + React + OpenAI GPT-4o-mini  
+**Desenvolvido por**: Fernando Meregali Xavier  
+**Framework**: FastAPI + React + Groq DeepSeek R1 Distill Llama 70B  
 **Data de Entrega**: 18 de Setembro de 2025  
 **Curso**: Agentes Autônomos
