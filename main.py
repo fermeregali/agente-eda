@@ -243,30 +243,16 @@ class DataAnalyzer:
         
         return img_base64
 
-# Integração com IA usando emergentintegrations
+# Integração com IA usando Groq
 async def analyze_with_ai(question: str, dataset_info: Dict, conversation_history: List = None):
     """Analisar pergunta usando IA e gerar resposta contextualizada"""
     try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        from groq import Groq
         from dotenv import load_dotenv
         load_dotenv("config.env")
         
-        # Configurar chat com IA
-        chat = LlmChat(
-            api_key=os.getenv("EMERGENT_LLM_KEY"),
-            session_id=str(uuid.uuid4()),
-            system_message="""Você é um especialista em análise exploratória de dados (EDA) que trabalha com arquivos CSV.
-            
-            Suas responsabilidades:
-            1. Analisar dados estatísticos e identificar padrões
-            2. Detectar anomalias e outliers
-            3. Sugerir visualizações relevantes
-            4. Gerar insights e conclusões baseadas nos dados
-            5. Responder em português brasileiro de forma clara e técnica
-            
-            Sempre baseie suas respostas nos dados fornecidos e sugira análises específicas quando apropriado.
-            Use um tom acadêmico mas acessível."""
-        ).with_model("openai", "gpt-4o-mini")
+        # Configurar cliente Groq
+        client = Groq(api_key=os.getenv("GROQ_API_KEY"))
         
         # Construir contexto com informações do dataset
         context = f"""
@@ -286,9 +272,41 @@ async def analyze_with_ai(question: str, dataset_info: Dict, conversation_histor
             for msg in conversation_history[-3:]:  # Últimas 3 mensagens
                 context += f"- {msg.get('type', 'user')}: {msg.get('content', '')}\n"
         
-        # Enviar mensagem para IA
-        user_message = UserMessage(text=context)
-        response = await chat.send_message(user_message)
+        # Preparar mensagens para o Groq
+        messages = [
+            {
+                "role": "system",
+                "content": """Você é um especialista em análise exploratória de dados (EDA) que trabalha com arquivos CSV.
+                
+                Suas responsabilidades:
+                1. Analisar dados estatísticos e identificar padrões
+                2. Detectar anomalias e outliers
+                3. Sugerir visualizações relevantes
+                4. Gerar insights e conclusões baseadas nos dados
+                5. Responder em português brasileiro de forma clara e técnica
+                
+                Sempre baseie suas respostas nos dados fornecidos e sugira análises específicas quando apropriado.
+                Use um tom acadêmico mas acessível."""
+            },
+            {
+                "role": "user",
+                "content": context
+            }
+        ]
+        
+        # Enviar mensagem para Groq
+        completion = client.chat.completions.create(
+            model="deepseek-r1-distill-llama-70b",
+            messages=messages,
+            temperature=0.6,
+            max_completion_tokens=4096,
+            top_p=0.95,
+            stream=False,
+            stop=None
+        )
+        
+        # Extrair resposta
+        response = completion.choices[0].message.content
         
         return response
         
