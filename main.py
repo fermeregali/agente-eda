@@ -2,8 +2,8 @@
 Agente Inteligente para Análise de Dados - EDA Automático
 Sistema que analisa arquivos CSV e responde perguntas sobre os dados usando IA
 
-Tecnologias: FastAPI (backend), React (frontend), Groq + DeepSeek R1 (IA)
-Autor: Desenvolvedor de Data Science
+Framework: FastAPI + React + Groq DeepSeek R1 Distill Llama 70B
+Autor: Fernando Meregali Xavier
 Data: Desenvolvido ao longo do tempo com várias melhorias
 """
 
@@ -52,8 +52,8 @@ logger = logging.getLogger(__name__)
 
 # Criar a aplicação FastAPI
 app = FastAPI(
-    title="Analisador Inteligente de Dados CSV",
-    description="Faça upload de CSV e converse com seus dados usando IA",
+    title="Agente de Análise Exploratória de Dados",
+    description="Agente inteligente para análise de arquivos CSV com IA",
     version="1.0.0"
 )
 
@@ -253,13 +253,15 @@ class DataAnalyzer:
         
         return img_base64
 
-# Função para conversar com a IA
-async def ask_ai(question: str, dataset_info: Dict, conversation_history: List = None):
-    """Pergunta para a IA sobre os dados"""
+# Integração com IA usando Groq
+async def analyze_with_ai(question: str, dataset_info: Dict, conversation_history: List = None):
+    """Analisar pergunta usando IA e gerar resposta contextualizada"""
     try:
         from groq import Groq
+        from dotenv import load_dotenv
+        load_dotenv("config.env")
         
-        # Configurar cliente da Groq
+        # Configurar cliente Groq
         client = Groq(api_key=os.getenv("GROQ_API_KEY"))
         
         # Montar contexto com informações do dataset
@@ -280,20 +282,21 @@ async def ask_ai(question: str, dataset_info: Dict, conversation_history: List =
             for msg in conversation_history[-3:]:
                 context += f"- {msg.get('type', 'user')}: {msg.get('content', '')}\n"
         
-        # Preparar mensagens para o modelo
+        # Preparar mensagens para o Groq
         messages = [
             {
                 "role": "system",
-                "content": """Você é um analista de dados especializado em EDA.
+                "content": """Você é um especialista em análise exploratória de dados (EDA) que trabalha com arquivos CSV.
                 
-                Sua função:
-                - Analisar dados e identificar padrões
-                - Detectar anomalias e outliers  
-                - Sugerir visualizações úteis
-                - Dar insights baseados nos dados
-                - Responder em português de forma clara
+                Suas responsabilidades:
+                1. Analisar dados estatísticos e identificar padrões
+                2. Detectar anomalias e outliers
+                3. Sugerir visualizações relevantes
+                4. Gerar insights e conclusões baseadas nos dados
+                5. Responder em português brasileiro de forma clara e técnica
                 
-                Seja técnico mas acessível."""
+                Sempre baseie suas respostas nos dados fornecidos e sugira análises específicas quando apropriado.
+                Use um tom acadêmico mas acessível."""
             },
             {
                 "role": "user",
@@ -301,17 +304,18 @@ async def ask_ai(question: str, dataset_info: Dict, conversation_history: List =
             }
         ]
         
-        # Chamar a API da Groq
+        # Enviar mensagem para Groq
         completion = client.chat.completions.create(
             model="deepseek-r1-distill-llama-70b",
             messages=messages,
             temperature=0.6,
             max_completion_tokens=4096,
             top_p=0.95,
-            stream=False
+            stream=False,
+            stop=None
         )
         
-        # Pegar a resposta
+        # Extrair resposta
         response = completion.choices[0].message.content
         
         return response
@@ -323,12 +327,12 @@ async def ask_ai(question: str, dataset_info: Dict, conversation_history: List =
 # Endpoints da API
 
 @app.get("/api/sample-files")
-async def get_sample_files():
-    """Lista arquivos CSV de exemplo"""
+async def list_sample_files():
+    """Listar arquivos CSV disponíveis na pasta sample_data"""
     try:
         sample_dir = Path("sample_data")
         if not sample_dir.exists():
-            return {"files": [], "message": "Pasta de exemplos não encontrada"}
+            return {"files": [], "message": "Pasta sample_data não encontrada"}
         
         csv_files = []
         for file_path in sample_dir.glob("*.csv"):
@@ -342,19 +346,22 @@ async def get_sample_files():
         return {"files": csv_files, "count": len(csv_files)}
     except Exception as e:
         logger.error(f"Erro ao listar arquivos: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro ao listar arquivos: {str(e)}")
 
 @app.post("/api/load-sample/{filename}")
 async def load_sample_file(filename: str):
-    """Carrega um arquivo CSV de exemplo"""
+    """Carregar arquivo CSV da pasta sample_data"""
     try:
+        # Verificar se o arquivo é CSV
         if not filename.endswith('.csv'):
-            raise HTTPException(status_code=400, detail="Precisa ser arquivo CSV")
+            raise HTTPException(status_code=400, detail="Apenas arquivos CSV são aceitos")
         
+        # Construir caminho do arquivo
         file_path = Path("sample_data") / filename
         
+        # Verificar se arquivo existe
         if not file_path.exists():
-            raise HTTPException(status_code=404, detail=f"Arquivo {filename} não encontrado")
+            raise HTTPException(status_code=404, detail=f"Arquivo {filename} não encontrado na pasta sample_data")
         
         # Tentar diferentes codificações
         encodings = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
@@ -363,21 +370,23 @@ async def load_sample_file(filename: str):
         for encoding in encodings:
             try:
                 df = pd.read_csv(file_path, encoding=encoding)
-                logger.info(f"Arquivo carregado com encoding: {encoding}")
+                logger.info(f"Arquivo carregado com sucesso usando codificação: {encoding}")
                 break
             except UnicodeDecodeError:
+                logger.warning(f"Falha ao carregar com codificação {encoding}")
                 continue
             except Exception as e:
-                logger.error(f"Erro com {encoding}: {e}")
+                logger.error(f"Erro ao carregar arquivo com {encoding}: {e}")
                 continue
         
         if df is None:
-            raise HTTPException(status_code=500, detail="Não consegui ler o arquivo com nenhum encoding")
+            raise HTTPException(status_code=500, detail="Não foi possível carregar o arquivo com nenhuma codificação testada")
         
+        # Verificar se o DataFrame está vazio
         if df.empty:
-            raise HTTPException(status_code=400, detail="Arquivo vazio")
+            raise HTTPException(status_code=400, detail="O arquivo CSV está vazio ou não contém dados válidos")
         
-        # Criar sessão
+        # Gerar ID da sessão
         session_id = str(uuid.uuid4())
         
         # Analisar dados
@@ -387,7 +396,7 @@ async def load_sample_file(filename: str):
         outliers_info = analyzer.find_outliers()
         correlation_matrix = analyzer.get_correlations()
         
-        # Salvar dados da sessão
+        # Armazenar dataset e informações
         datasets_storage[session_id] = {
             "dataframe": df,
             "analyzer": analyzer,
@@ -399,14 +408,15 @@ async def load_sample_file(filename: str):
             "source_file": filename
         }
         
+        # Inicializar sessão
         sessions_storage[session_id] = {
             "conversation_history": [],
             "created_at": datetime.now()
         }
         
-        # Análise inicial automática
-        initial_analysis = await ask_ai(
-            "Faça uma análise inicial deste dataset, destacando pontos importantes",
+        # Gerar análise inicial automática com IA
+        initial_analysis = await analyze_with_ai(
+            "Faça uma análise inicial e resumo geral deste dataset, destacando os pontos mais importantes",
             basic_info
         )
         
@@ -414,57 +424,60 @@ async def load_sample_file(filename: str):
             "session_id": session_id,
             "basic_info": basic_info,
             "initial_analysis": initial_analysis,
-            "message": f"Dataset {filename} carregado! {basic_info['shape'][0]} linhas, {basic_info['shape'][1]} colunas.",
+            "message": f"Dataset {filename} carregado com sucesso! {basic_info['shape'][0]} linhas e {basic_info['shape'][1]} colunas.",
             "source_file": filename
         }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Erro ao carregar sample: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro: {str(e)}")
+        logger.error(f"Erro ao carregar arquivo sample: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao processar arquivo: {str(e)}")
 
 @app.post("/api/upload-csv")
 async def upload_csv(file: UploadFile = File(...)):
-    """Faz upload de arquivo CSV"""
+    """Upload e análise inicial de arquivo CSV"""
     try:
         if not file.filename.endswith('.csv'):
-            raise HTTPException(status_code=400, detail="Só aceito CSV")
+            raise HTTPException(status_code=400, detail="Apenas arquivos CSV são aceitos")
         
-        # Ler arquivo
+        # Ler arquivo CSV com tratamento de codificação
         contents = await file.read()
         
-        # Tentar diferentes encodings
+        # Tentar diferentes codificações
         encodings = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
         df = None
         
         for encoding in encodings:
             try:
                 df = pd.read_csv(io.StringIO(contents.decode(encoding)))
-                logger.info(f"Upload com encoding: {encoding}")
+                logger.info(f"Arquivo carregado com sucesso usando codificação: {encoding}")
                 break
             except UnicodeDecodeError:
+                logger.warning(f"Falha ao carregar com codificação {encoding}")
                 continue
             except Exception as e:
-                logger.error(f"Erro com {encoding}: {e}")
+                logger.error(f"Erro ao carregar arquivo com {encoding}: {e}")
                 continue
         
         if df is None:
-            raise HTTPException(status_code=500, detail="Não consegui ler o arquivo")
+            raise HTTPException(status_code=500, detail="Não foi possível carregar o arquivo com nenhuma codificação testada")
         
+        # Verificar se o DataFrame está vazio
         if df.empty:
-            raise HTTPException(status_code=400, detail="Arquivo vazio")
+            raise HTTPException(status_code=400, detail="O arquivo CSV está vazio ou não contém dados válidos")
         
-        # Criar sessão
+        # Gerar ID da sessão
         session_id = str(uuid.uuid4())
         
-        # Analisar
+        # Analisar dados
         analyzer = DataAnalyzer(df)
         basic_info = analyzer.get_basic_info()
         descriptive_stats = analyzer.get_descriptive_stats()
         outliers_info = analyzer.find_outliers()
         correlation_matrix = analyzer.get_correlations()
         
+        # Armazenar dataset e informações
         datasets_storage[session_id] = {
             "dataframe": df,
             "analyzer": analyzer,
@@ -475,14 +488,15 @@ async def upload_csv(file: UploadFile = File(...)):
             "uploaded_at": datetime.now()
         }
         
+        # Inicializar sessão
         sessions_storage[session_id] = {
             "conversation_history": [],
             "created_at": datetime.now()
         }
         
-        # Análise inicial
-        initial_analysis = await ask_ai(
-            "Analise este dataset e dê um resumo geral",
+        # Gerar análise inicial automática com IA
+        initial_analysis = await analyze_with_ai(
+            "Faça uma análise inicial e resumo geral deste dataset, destacando os pontos mais importantes",
             basic_info
         )
         
@@ -490,7 +504,7 @@ async def upload_csv(file: UploadFile = File(...)):
             "session_id": session_id,
             "basic_info": basic_info,
             "initial_analysis": initial_analysis,
-            "message": f"Dataset carregado! {basic_info['shape'][0]} linhas, {basic_info['shape'][1]} colunas."
+            "message": f"Dataset carregado com sucesso! {basic_info['shape'][0]} linhas e {basic_info['shape'][1]} colunas."
         }
         
     except Exception as e:
@@ -523,7 +537,7 @@ async def chat_with_data(message: ChatMessage):
         })
         
         # Perguntar para IA
-        ai_response = await ask_ai(user_message, basic_info, conversation_history)
+        ai_response = await analyze_with_ai(user_message, basic_info, conversation_history)
         
         # Gerar gráficos baseados na pergunta
         charts = []
@@ -643,15 +657,16 @@ async def health_check():
 @app.get("/")
 async def root():
     return {
-        "message": "Analisador Inteligente de Dados CSV",
+        "message": "Agente de Análise Exploratória de Dados",
         "version": "1.0.0",
-        "description": "Converse com seus dados usando IA",
+        "description": "Agente inteligente para análise de arquivos CSV com IA",
         "endpoints": [
             "/api/upload-csv - Upload de CSV",
             "/api/load-sample/{filename} - Carregar exemplo", 
             "/api/sample-files - Listar exemplos",
             "/api/chat - Conversar com dados",
             "/api/session/{session_id}/info - Info da sessão",
+            "/api/session/{session_id}/history - Histórico da conversa",
             "/docs - Documentação completa"
         ]
     }
