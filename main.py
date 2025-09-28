@@ -1,11 +1,13 @@
 """
-Agente de Análise Exploratória de Dados (EDA)
-Desenvolvido para análise inteligente de arquivos CSV
+Agente Inteligente para Análise de Dados - EDA Automático
+Sistema que analisa arquivos CSV e responde perguntas sobre os dados usando IA
 
-Framework: FastAPI + React + Groq DeepSeek R1 Distill Llama 70B
-Autor: Fernando Meregali Xavier
+Tecnologias: FastAPI (backend), React (frontend), Groq + DeepSeek R1 (IA)
+Autor: Desenvolvedor de Data Science
+Data: Desenvolvido ao longo do tempo com várias melhorias
 """
 
+# Importações básicas que vou precisar
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -14,15 +16,16 @@ from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import pandas as pd
 import numpy as np
+
+# Configuração para matplotlib funcionar em backend
 import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.express as px
 import plotly.graph_objects as go
-import plotly.io as pio
-from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import KMeans
+
+# Outras bibliotecas úteis
 import io
 import base64
 import json
@@ -30,26 +33,31 @@ import os
 import uuid
 import asyncio
 from datetime import datetime
-from motor.motor_asyncio import AsyncIOMotorClient
-from dotenv import load_dotenv
 import logging
 from pathlib import Path
 
-# Carregar variáveis de ambiente
-load_dotenv("config.env")
+# Banco de dados - MongoDB se estiver disponível
+try:
+    from motor.motor_asyncio import AsyncIOMotorClient
+    from dotenv import load_dotenv
+    load_dotenv("config.env")
+    MONGODB_AVAILABLE = True
+except ImportError:
+    MONGODB_AVAILABLE = False
+    print("Aviso: MongoDB não disponível, usando armazenamento em memória")
 
-# Configurar logging
+# Configurar logging para ver o que está acontecendo
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Inicializar FastAPI
+# Criar a aplicação FastAPI
 app = FastAPI(
-    title="Agente de Análise Exploratória de Dados",
-    description="Agente inteligente para análise de arquivos CSV com IA",
+    title="Analisador Inteligente de Dados CSV",
+    description="Faça upload de CSV e converse com seus dados usando IA",
     version="1.0.0"
 )
 
-# Configurar CORS
+# Configurar CORS para o frontend conseguir acessar
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","),
@@ -58,15 +66,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configuração do MongoDB
+# Configurações do banco de dados
 MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
-DB_NAME = os.getenv("DB_NAME", "agente_eda_db")
+DB_NAME = os.getenv("DB_NAME", "eda_analyzer_db")
 
-# Cliente MongoDB
+# Variáveis globais para armazenamento
 mongo_client = None
 database = None
 
-# Modelos Pydantic
+# Armazenamento em memória (fallback)
+datasets_storage = {}
+sessions_storage = {}
+
+# Modelos de dados que vou usar
 class ChatMessage(BaseModel):
     message: str
     session_id: str
@@ -82,37 +94,37 @@ class SessionData(BaseModel):
     conversation_history: List[Dict]
     created_at: datetime
 
-# Armazenamento em memória para datasets (em produção, usar Redis ou similar)
-datasets_storage = {}
-sessions_storage = {}
-
+# Inicialização do app
 @app.on_event("startup")
 async def startup_event():
-    """Inicializar conexões na inicialização"""
+    """Conectar ao MongoDB quando a aplicação iniciar"""
     global mongo_client, database
-    try:
-        mongo_client = AsyncIOMotorClient(MONGO_URL)
-        database = mongo_client[DB_NAME]
-        logger.info("Conectado ao MongoDB com sucesso")
-    except Exception as e:
-        logger.warning(f"Erro ao conectar MongoDB: {e}. Usando armazenamento em memória.")
-        database = None
+    if MONGODB_AVAILABLE:
+        try:
+            mongo_client = AsyncIOMotorClient(MONGO_URL)
+            database = mongo_client[DB_NAME]
+            logger.info("✅ Conectado ao MongoDB!")
+        except Exception as e:
+            logger.warning(f"❌ MongoDB não conectado: {e}. Usando memória.")
+            database = None
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Fechar conexões na finalização"""
+    """Fechar conexões quando a aplicação parar"""
     if mongo_client:
         mongo_client.close()
 
-# Função para análise exploratória de dados
+# Classe principal que faz a análise dos dados
 class DataAnalyzer:
+    """Analisa datasets e gera insights"""
+    
     def __init__(self, df: pd.DataFrame):
         self.df = df
         self.numeric_columns = df.select_dtypes(include=[np.number]).columns.tolist()
         self.categorical_columns = df.select_dtypes(include=['object', 'category']).columns.tolist()
     
     def get_basic_info(self):
-        """Informações básicas do dataset"""
+        """Pega informações básicas do dataset"""
         return {
             "shape": self.df.shape,
             "columns": self.df.columns.tolist(),
@@ -123,16 +135,16 @@ class DataAnalyzer:
             "memory_usage": f"{self.df.memory_usage(deep=True).sum() / 1024**2:.2f} MB"
         }
     
-    def get_descriptive_statistics(self):
-        """Estatísticas descritivas"""
+    def get_descriptive_stats(self):
+        """Calcula estatísticas descritivas"""
         stats = {}
         
-        # Estatísticas numéricas
+        # Para colunas numéricas
         if self.numeric_columns:
             numeric_stats = self.df[self.numeric_columns].describe()
             stats["numeric"] = numeric_stats.to_dict()
         
-        # Estatísticas categóricas
+        # Para colunas categóricas
         if self.categorical_columns:
             categorical_stats = {}
             for col in self.categorical_columns:
@@ -145,8 +157,8 @@ class DataAnalyzer:
         
         return stats
     
-    def detect_outliers(self):
-        """Detectar outliers usando método IQR"""
+    def find_outliers(self):
+        """Encontra outliers usando método IQR"""
         outliers_info = {}
         
         for col in self.numeric_columns:
@@ -166,26 +178,26 @@ class DataAnalyzer:
         
         return outliers_info
     
-    def get_correlation_matrix(self):
-        """Matriz de correlação para variáveis numéricas"""
+    def get_correlations(self):
+        """Calcula correlações entre variáveis numéricas"""
         if len(self.numeric_columns) > 1:
             correlation = self.df[self.numeric_columns].corr()
             return correlation.to_dict()
         return {}
     
-    def generate_histogram(self, column: str):
-        """Gerar histograma para uma coluna"""
+    def create_histogram(self, column: str):
+        """Cria histograma para uma coluna"""
         if column not in self.df.columns:
             return None
         
         plt.figure(figsize=(10, 6))
-        plt.hist(self.df[column].dropna(), bins=30, alpha=0.7, color='skyblue', edgecolor='black')
+        plt.hist(self.df[column].dropna(), bins=30, alpha=0.7, edgecolor='black')
         plt.title(f'Distribuição de {column}')
         plt.xlabel(column)
         plt.ylabel('Frequência')
         plt.grid(True, alpha=0.3)
         
-        # Converter para base64
+        # Converter para base64 para enviar via API
         img_buffer = io.BytesIO()
         plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight')
         img_buffer.seek(0)
@@ -194,8 +206,8 @@ class DataAnalyzer:
         
         return img_base64
     
-    def generate_correlation_heatmap(self):
-        """Gerar heatmap de correlação"""
+    def create_correlation_heatmap(self):
+        """Cria heatmap de correlação"""
         if len(self.numeric_columns) < 2:
             return None
         
@@ -206,7 +218,6 @@ class DataAnalyzer:
         plt.title('Matriz de Correlação')
         plt.tight_layout()
         
-        # Converter para base64
         img_buffer = io.BytesIO()
         plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight')
         img_buffer.seek(0)
@@ -215,8 +226,8 @@ class DataAnalyzer:
         
         return img_base64
     
-    def generate_scatter_plot(self, x_col: str, y_col: str, color_col: str = None):
-        """Gerar gráfico de dispersão"""
+    def create_scatter_plot(self, x_col: str, y_col: str, color_col: str = None):
+        """Cria gráfico de dispersão"""
         if x_col not in self.df.columns or y_col not in self.df.columns:
             return None
         
@@ -227,14 +238,13 @@ class DataAnalyzer:
                                 c=self.df[color_col], alpha=0.6, cmap='viridis')
             plt.colorbar(scatter, label=color_col)
         else:
-            plt.scatter(self.df[x_col], self.df[y_col], alpha=0.6, color='skyblue')
+            plt.scatter(self.df[x_col], self.df[y_col], alpha=0.6)
         
         plt.xlabel(x_col)
         plt.ylabel(y_col)
         plt.title(f'{y_col} vs {x_col}')
         plt.grid(True, alpha=0.3)
         
-        # Converter para base64
         img_buffer = io.BytesIO()
         plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight')
         img_buffer.seek(0)
@@ -243,18 +253,16 @@ class DataAnalyzer:
         
         return img_base64
 
-# Integração com IA usando Groq
-async def analyze_with_ai(question: str, dataset_info: Dict, conversation_history: List = None):
-    """Analisar pergunta usando IA e gerar resposta contextualizada"""
+# Função para conversar com a IA
+async def ask_ai(question: str, dataset_info: Dict, conversation_history: List = None):
+    """Pergunta para a IA sobre os dados"""
     try:
         from groq import Groq
-        from dotenv import load_dotenv
-        load_dotenv("config.env")
         
-        # Configurar cliente Groq
+        # Configurar cliente da Groq
         client = Groq(api_key=os.getenv("GROQ_API_KEY"))
         
-        # Construir contexto com informações do dataset
+        # Montar contexto com informações do dataset
         context = f"""
         INFORMAÇÕES DO DATASET:
         - Formato: {dataset_info.get('shape', 'N/A')}
@@ -263,30 +271,29 @@ async def analyze_with_ai(question: str, dataset_info: Dict, conversation_histor
         - Colunas Categóricas: {', '.join(dataset_info.get('categorical_columns', []))}
         - Valores Ausentes: {dataset_info.get('missing_values', {})}
         
-        PERGUNTA DO USUÁRIO: {question}
+        PERGUNTA: {question}
         """
         
-        # Adicionar histórico se disponível
+        # Adicionar histórico recente da conversa
         if conversation_history:
-            context += "\n\nHISTÓRICO DA CONVERSA:\n"
-            for msg in conversation_history[-3:]:  # Últimas 3 mensagens
+            context += "\n\nCONVERSA RECENTE:\n"
+            for msg in conversation_history[-3:]:
                 context += f"- {msg.get('type', 'user')}: {msg.get('content', '')}\n"
         
-        # Preparar mensagens para o Groq
+        # Preparar mensagens para o modelo
         messages = [
             {
                 "role": "system",
-                "content": """Você é um especialista em análise exploratória de dados (EDA) que trabalha com arquivos CSV.
+                "content": """Você é um analista de dados especializado em EDA.
                 
-                Suas responsabilidades:
-                1. Analisar dados estatísticos e identificar padrões
-                2. Detectar anomalias e outliers
-                3. Sugerir visualizações relevantes
-                4. Gerar insights e conclusões baseadas nos dados
-                5. Responder em português brasileiro de forma clara e técnica
+                Sua função:
+                - Analisar dados e identificar padrões
+                - Detectar anomalias e outliers  
+                - Sugerir visualizações úteis
+                - Dar insights baseados nos dados
+                - Responder em português de forma clara
                 
-                Sempre baseie suas respostas nos dados fornecidos e sugira análises específicas quando apropriado.
-                Use um tom acadêmico mas acessível."""
+                Seja técnico mas acessível."""
             },
             {
                 "role": "user",
@@ -294,35 +301,34 @@ async def analyze_with_ai(question: str, dataset_info: Dict, conversation_histor
             }
         ]
         
-        # Enviar mensagem para Groq
+        # Chamar a API da Groq
         completion = client.chat.completions.create(
             model="deepseek-r1-distill-llama-70b",
             messages=messages,
             temperature=0.6,
             max_completion_tokens=4096,
             top_p=0.95,
-            stream=False,
-            stop=None
+            stream=False
         )
         
-        # Extrair resposta
+        # Pegar a resposta
         response = completion.choices[0].message.content
         
         return response
         
     except Exception as e:
-        logger.error(f"Erro na análise com IA: {e}")
-        return f"Erro ao processar pergunta com IA: {str(e)}"
+        logger.error(f"Erro na IA: {e}")
+        return f"Desculpe, tive um problema ao analisar sua pergunta: {str(e)}"
 
 # Endpoints da API
 
 @app.get("/api/sample-files")
-async def list_sample_files():
-    """Listar arquivos CSV disponíveis na pasta sample_data"""
+async def get_sample_files():
+    """Lista arquivos CSV de exemplo"""
     try:
         sample_dir = Path("sample_data")
         if not sample_dir.exists():
-            return {"files": [], "message": "Pasta sample_data não encontrada"}
+            return {"files": [], "message": "Pasta de exemplos não encontrada"}
         
         csv_files = []
         for file_path in sample_dir.glob("*.csv"):
@@ -336,22 +342,19 @@ async def list_sample_files():
         return {"files": csv_files, "count": len(csv_files)}
     except Exception as e:
         logger.error(f"Erro ao listar arquivos: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro ao listar arquivos: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro: {str(e)}")
 
 @app.post("/api/load-sample/{filename}")
 async def load_sample_file(filename: str):
-    """Carregar arquivo CSV da pasta sample_data"""
+    """Carrega um arquivo CSV de exemplo"""
     try:
-        # Verificar se o arquivo é CSV
         if not filename.endswith('.csv'):
-            raise HTTPException(status_code=400, detail="Apenas arquivos CSV são aceitos")
+            raise HTTPException(status_code=400, detail="Precisa ser arquivo CSV")
         
-        # Construir caminho do arquivo
         file_path = Path("sample_data") / filename
         
-        # Verificar se arquivo existe
         if not file_path.exists():
-            raise HTTPException(status_code=404, detail=f"Arquivo {filename} não encontrado na pasta sample_data")
+            raise HTTPException(status_code=404, detail=f"Arquivo {filename} não encontrado")
         
         # Tentar diferentes codificações
         encodings = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
@@ -360,33 +363,31 @@ async def load_sample_file(filename: str):
         for encoding in encodings:
             try:
                 df = pd.read_csv(file_path, encoding=encoding)
-                logger.info(f"Arquivo carregado com sucesso usando codificação: {encoding}")
+                logger.info(f"Arquivo carregado com encoding: {encoding}")
                 break
             except UnicodeDecodeError:
-                logger.warning(f"Falha ao carregar com codificação {encoding}")
                 continue
             except Exception as e:
-                logger.error(f"Erro ao carregar arquivo com {encoding}: {e}")
+                logger.error(f"Erro com {encoding}: {e}")
                 continue
         
         if df is None:
-            raise HTTPException(status_code=500, detail="Não foi possível carregar o arquivo com nenhuma codificação testada")
+            raise HTTPException(status_code=500, detail="Não consegui ler o arquivo com nenhum encoding")
         
-        # Verificar se o DataFrame está vazio
         if df.empty:
-            raise HTTPException(status_code=400, detail="O arquivo CSV está vazio ou não contém dados válidos")
+            raise HTTPException(status_code=400, detail="Arquivo vazio")
         
-        # Gerar ID da sessão
+        # Criar sessão
         session_id = str(uuid.uuid4())
         
         # Analisar dados
         analyzer = DataAnalyzer(df)
         basic_info = analyzer.get_basic_info()
-        descriptive_stats = analyzer.get_descriptive_statistics()
-        outliers_info = analyzer.detect_outliers()
-        correlation_matrix = analyzer.get_correlation_matrix()
+        descriptive_stats = analyzer.get_descriptive_stats()
+        outliers_info = analyzer.find_outliers()
+        correlation_matrix = analyzer.get_correlations()
         
-        # Armazenar dataset e informações
+        # Salvar dados da sessão
         datasets_storage[session_id] = {
             "dataframe": df,
             "analyzer": analyzer,
@@ -398,15 +399,14 @@ async def load_sample_file(filename: str):
             "source_file": filename
         }
         
-        # Inicializar sessão
         sessions_storage[session_id] = {
             "conversation_history": [],
             "created_at": datetime.now()
         }
         
-        # Gerar análise inicial automática com IA
-        initial_analysis = await analyze_with_ai(
-            "Faça uma análise inicial e resumo geral deste dataset, destacando os pontos mais importantes",
+        # Análise inicial automática
+        initial_analysis = await ask_ai(
+            "Faça uma análise inicial deste dataset, destacando pontos importantes",
             basic_info
         )
         
@@ -414,61 +414,57 @@ async def load_sample_file(filename: str):
             "session_id": session_id,
             "basic_info": basic_info,
             "initial_analysis": initial_analysis,
-            "message": f"Dataset {filename} carregado com sucesso! {basic_info['shape'][0]} linhas e {basic_info['shape'][1]} colunas.",
+            "message": f"Dataset {filename} carregado! {basic_info['shape'][0]} linhas, {basic_info['shape'][1]} colunas.",
             "source_file": filename
         }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Erro ao carregar arquivo sample: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro ao processar arquivo: {str(e)}")
+        logger.error(f"Erro ao carregar sample: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro: {str(e)}")
 
 @app.post("/api/upload-csv")
 async def upload_csv(file: UploadFile = File(...)):
-    """Upload e análise inicial de arquivo CSV"""
+    """Faz upload de arquivo CSV"""
     try:
-        # Verificar se é arquivo CSV
         if not file.filename.endswith('.csv'):
-            raise HTTPException(status_code=400, detail="Apenas arquivos CSV são aceitos")
+            raise HTTPException(status_code=400, detail="Só aceito CSV")
         
-        # Ler arquivo CSV com tratamento de codificação
+        # Ler arquivo
         contents = await file.read()
         
-        # Tentar diferentes codificações
+        # Tentar diferentes encodings
         encodings = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
         df = None
         
         for encoding in encodings:
             try:
                 df = pd.read_csv(io.StringIO(contents.decode(encoding)))
-                logger.info(f"Arquivo carregado com sucesso usando codificação: {encoding}")
+                logger.info(f"Upload com encoding: {encoding}")
                 break
             except UnicodeDecodeError:
-                logger.warning(f"Falha ao carregar com codificação {encoding}")
                 continue
             except Exception as e:
-                logger.error(f"Erro ao carregar arquivo com {encoding}: {e}")
+                logger.error(f"Erro com {encoding}: {e}")
                 continue
         
         if df is None:
-            raise HTTPException(status_code=500, detail="Não foi possível carregar o arquivo com nenhuma codificação testada")
+            raise HTTPException(status_code=500, detail="Não consegui ler o arquivo")
         
-        # Verificar se o DataFrame está vazio
         if df.empty:
-            raise HTTPException(status_code=400, detail="O arquivo CSV está vazio ou não contém dados válidos")
+            raise HTTPException(status_code=400, detail="Arquivo vazio")
         
-        # Gerar ID da sessão
+        # Criar sessão
         session_id = str(uuid.uuid4())
         
-        # Analisar dados
+        # Analisar
         analyzer = DataAnalyzer(df)
         basic_info = analyzer.get_basic_info()
-        descriptive_stats = analyzer.get_descriptive_statistics()
-        outliers_info = analyzer.detect_outliers()
-        correlation_matrix = analyzer.get_correlation_matrix()
+        descriptive_stats = analyzer.get_descriptive_stats()
+        outliers_info = analyzer.find_outliers()
+        correlation_matrix = analyzer.get_correlations()
         
-        # Armazenar dataset e informações
         datasets_storage[session_id] = {
             "dataframe": df,
             "analyzer": analyzer,
@@ -479,15 +475,14 @@ async def upload_csv(file: UploadFile = File(...)):
             "uploaded_at": datetime.now()
         }
         
-        # Inicializar sessão
         sessions_storage[session_id] = {
             "conversation_history": [],
             "created_at": datetime.now()
         }
         
-        # Gerar análise inicial automática com IA
-        initial_analysis = await analyze_with_ai(
-            "Faça uma análise inicial e resumo geral deste dataset, destacando os pontos mais importantes",
+        # Análise inicial
+        initial_analysis = await ask_ai(
+            "Analise este dataset e dê um resumo geral",
             basic_info
         )
         
@@ -495,25 +490,24 @@ async def upload_csv(file: UploadFile = File(...)):
             "session_id": session_id,
             "basic_info": basic_info,
             "initial_analysis": initial_analysis,
-            "message": f"Dataset carregado com sucesso! {basic_info['shape'][0]} linhas e {basic_info['shape'][1]} colunas."
+            "message": f"Dataset carregado! {basic_info['shape'][0]} linhas, {basic_info['shape'][1]} colunas."
         }
         
     except Exception as e:
         logger.error(f"Erro no upload: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro ao processar arquivo: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro: {str(e)}")
 
 @app.post("/api/chat", response_model=AnalysisResponse)
 async def chat_with_data(message: ChatMessage):
-    """Chat conversacional com análise de dados"""
+    """Conversa com os dados"""
     try:
         session_id = message.session_id
         user_message = message.message
         
-        # Verificar se sessão existe
         if session_id not in datasets_storage:
-            raise HTTPException(status_code=404, detail="Sessão não encontrada. Faça upload do CSV primeiro.")
+            raise HTTPException(status_code=404, detail="Sessão não encontrada")
         
-        # Obter dados da sessão
+        # Pegar dados da sessão
         session_data = datasets_storage[session_id]
         conversation_history = sessions_storage[session_id]["conversation_history"]
         
@@ -521,26 +515,24 @@ async def chat_with_data(message: ChatMessage):
         analyzer = session_data["analyzer"]
         basic_info = session_data["basic_info"]
         
-        # Adicionar mensagem do usuário ao histórico
+        # Adicionar mensagem ao histórico
         conversation_history.append({
             "type": "user",
             "content": user_message,
             "timestamp": datetime.now()
         })
         
-        # Analisar pergunta e gerar resposta com IA
-        ai_response = await analyze_with_ai(user_message, basic_info, conversation_history)
+        # Perguntar para IA
+        ai_response = await ask_ai(user_message, basic_info, conversation_history)
         
         # Gerar gráficos baseados na pergunta
         charts = []
-        
-        # Lógica para detectar tipo de visualização necessária
         message_lower = user_message.lower()
         
+        # Detectar tipo de gráfico necessário
         if "histograma" in message_lower or "distribuição" in message_lower:
-            # Gerar histogramas para colunas numéricas principais
-            for col in analyzer.numeric_columns[:3]:  # Máximo 3 gráficos
-                chart_data = analyzer.generate_histogram(col)
+            for col in analyzer.numeric_columns[:3]:
+                chart_data = analyzer.create_histogram(col)
                 if chart_data:
                     charts.append({
                         "type": "histogram",
@@ -548,9 +540,8 @@ async def chat_with_data(message: ChatMessage):
                         "data": chart_data
                     })
         
-        elif "correlação" in message_lower or "correlacao" in message_lower:
-            # Gerar heatmap de correlação
-            heatmap_data = analyzer.generate_correlation_heatmap()
+        elif "correlação" in message_lower:
+            heatmap_data = analyzer.create_correlation_heatmap()
             if heatmap_data:
                 charts.append({
                     "type": "heatmap",
@@ -559,9 +550,8 @@ async def chat_with_data(message: ChatMessage):
                 })
         
         elif "dispersão" in message_lower or "scatter" in message_lower:
-            # Gerar scatter plot com as duas primeiras colunas numéricas
             if len(analyzer.numeric_columns) >= 2:
-                scatter_data = analyzer.generate_scatter_plot(
+                scatter_data = analyzer.create_scatter_plot(
                     analyzer.numeric_columns[0], 
                     analyzer.numeric_columns[1]
                 )
@@ -572,14 +562,14 @@ async def chat_with_data(message: ChatMessage):
                         "data": scatter_data
                     })
         
-        # Gerar estatísticas relevantes
+        # Estatísticas
         statistics = {
             "outliers": session_data["outliers_info"],
             "correlations": session_data["correlation_matrix"],
             "basic_stats": session_data["descriptive_stats"]
         }
         
-        # Adicionar resposta ao histórico
+        # Salvar resposta
         conversation_history.append({
             "type": "assistant",
             "content": ai_response,
@@ -587,7 +577,7 @@ async def chat_with_data(message: ChatMessage):
             "timestamp": datetime.now()
         })
         
-        # Salvar no banco se disponível
+        # Tentar salvar no MongoDB
         if database is not None:
             try:
                 await database.conversations.update_one(
@@ -606,11 +596,11 @@ async def chat_with_data(message: ChatMessage):
         
     except Exception as e:
         logger.error(f"Erro no chat: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro ao processar mensagem: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro: {str(e)}")
 
 @app.get("/api/session/{session_id}/info")
 async def get_session_info(session_id: str):
-    """Obter informações da sessão"""
+    """Pega informações da sessão"""
     if session_id not in datasets_storage:
         raise HTTPException(status_code=404, detail="Sessão não encontrada")
     
@@ -624,7 +614,7 @@ async def get_session_info(session_id: str):
 
 @app.get("/api/session/{session_id}/history")
 async def get_conversation_history(session_id: str):
-    """Obter histórico da conversa"""
+    """Pega histórico da conversa"""
     if session_id not in sessions_storage:
         raise HTTPException(status_code=404, detail="Sessão não encontrada")
     
@@ -632,19 +622,19 @@ async def get_conversation_history(session_id: str):
 
 @app.delete("/api/session/{session_id}")
 async def delete_session(session_id: str):
-    """Deletar sessão e dados associados"""
+    """Deleta sessão"""
     if session_id in datasets_storage:
         del datasets_storage[session_id]
     if session_id in sessions_storage:
         del sessions_storage[session_id]
     
-    return {"message": "Sessão deletada com sucesso"}
+    return {"message": "Sessão deletada"}
 
 @app.get("/api/health")
 async def health_check():
-    """Verificação de saúde da API"""
+    """Verifica se a API está funcionando"""
     return {
-        "status": "healthy",
+        "status": "ok",
         "timestamp": datetime.now(),
         "active_sessions": len(datasets_storage),
         "mongodb_connected": database is not None
@@ -652,22 +642,21 @@ async def health_check():
 
 @app.get("/")
 async def root():
-    """Endpoint raiz"""
     return {
-        "message": "Agente de Análise Exploratória de Dados",
+        "message": "Analisador Inteligente de Dados CSV",
         "version": "1.0.0",
-        "description": "Agente inteligente para análise de arquivos CSV",
+        "description": "Converse com seus dados usando IA",
         "endpoints": [
-            "/api/upload-csv",
-            "/api/load-sample/{filename}",
-            "/api/sample-files",
-            "/api/chat",
-            "/api/session/{session_id}/info",
-            "/api/session/{session_id}/history",
-            "/docs"
+            "/api/upload-csv - Upload de CSV",
+            "/api/load-sample/{filename} - Carregar exemplo", 
+            "/api/sample-files - Listar exemplos",
+            "/api/chat - Conversar com dados",
+            "/api/session/{session_id}/info - Info da sessão",
+            "/docs - Documentação completa"
         ]
     }
 
+# Rodar o servidor
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
