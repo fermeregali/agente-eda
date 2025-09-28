@@ -3,8 +3,8 @@ Agente Inteligente para Análise de Dados - EDA Automático
 Sistema que analisa arquivos CSV e responde perguntas sobre os dados usando IA
 
 Tecnologias: FastAPI (backend), React (frontend), Groq + DeepSeek R1 (IA)
-Autor: Desenvolvedor de Data Science
-Data: Desenvolvido ao longo do tempo com várias melhorias
+Autor: Fernando Meregali Xavier
+
 """
 
 # Importações básicas que vou precisar
