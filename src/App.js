@@ -407,7 +407,7 @@ function App() {
         <footer className="mt-8 text-center text-sm text-gray-500">
           <p>
             Desenvolvido Fernando Meregali Xavier • 
-            Tecnologias: FastAPI, React, Groq LLM-> deepseek-r1-distill-llama-70b, MongoDB
+            Tecnologias: FastAPI, React, Groq LLM- deepseek-r1-distill-llama-70b, MongoDB
           </p>
         </footer>
       </div>
