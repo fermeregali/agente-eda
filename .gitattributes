@@ -1,8 +1,0 @@
-# Arquivos que devem ser ignorados pelo editor
-node_modules/ export-ignore
-venv/ export-ignore
-.env export-ignore
-__pycache__/ export-ignore
-*.pyc export-ignore
-*.pyo export-ignore
-*.pyd export-ignore
