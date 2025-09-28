@@ -26,6 +26,7 @@ Este é um **Agente de IA para Análise Exploratória de Dados (EDA)** desenvolv
 ## 🏗️ Arquitetura
 
 ### Stack Tecnológico
+
 - **Backend**: FastAPI (Python) - API REST moderna e rápida
 - **Frontend**: React - Interface de usuário responsiva
 - **IA**: Groq (DeepSeek R1) - Análises inteligentes contextualizadas
@@ -34,34 +35,39 @@ Este é um **Agente de IA para Análise Exploratória de Dados (EDA)** desenvolv
 - **Análise**: Pandas + NumPy + Scikit-learn - Processamento de dados
 
 ### Estrutura do Projeto
-```
+
+```text
 agente-eda/
-├── 📁 backend/
-│   ├── main.py              # API FastAPI principal
-│   ├── requirements.txt     # Dependências Python
-│   └── config.env          # Configurações
-├── 📁 frontend/
-│   ├── src/
-│   │   ├── App.js          # Componente React principal
-│   │   ├── App.css         # Estilos
-│   │   └── index.js        # Entry point
-│   ├── public/             # Arquivos estáticos
-│   └── package.json        # Dependências Node.js
-├── 📁 sample_data/         # Datasets de exemplo
-├── 📁 docs/               # Documentação
-├── test_system.py         # Testes automatizados
+├── main.py                 # API FastAPI principal
+├── requirements.txt        # Dependências Python
+├── config.env             # Configurações
+├── src/                   # Frontend React
+│   ├── App.js             # Componente React principal
+│   ├── App.css            # Estilos
+│   ├── index.js           # Entry point
+│   └── index.css          # Estilos globais
+├── public/                # Arquivos estáticos
+│   ├── index.html         # HTML principal
+│   └── manifest.json      # Manifesto PWA
+├── sample_data/           # Datasets de exemplo
+│   └── creditcard_sample.csv
+├── package.json           # Dependências Node.js
+├── package-lock.json      # Lock file das dependências
 ├── install.sh            # Script de instalação
+├── LICENSE               # Licença MIT
 └── README.md             # Este arquivo
 ```
 
 ## 🚀 Instalação e Uso
 
 ### Pré-requisitos
+
 - Python 3.8+
 - Node.js 16+
 - MongoDB (opcional - funciona sem)
 
 ### Instalação Rápida
+
 ```bash
 # 1. Clonar o repositório
 git clone https://github.com/fermeregali/agente-eda.git
@@ -82,6 +88,7 @@ npm start
 ```
 
 ### Instalação Manual
+
 ```bash
 # Backend
 python3 -m venv venv
@@ -91,19 +98,22 @@ pip install -r requirements.txt
 # Frontend
 npm install
 
-# Configuração
-cp config.env .env
+# Configuração (opcional)
+# Edite config.env com suas configurações
 ```
 
 ## 💡 Como Usar
 
 ### 1. Upload de Dataset
-- Acesse http://localhost:3000
+
+- Acesse <http://localhost:3000>
 - Arraste e solte seu arquivo CSV
 - Aguarde a análise inicial automática
 
 ### 2. Chat com IA
+
 Faça perguntas em linguagem natural:
+
 - "Faça uma análise geral do dataset"
 - "Quais são as estatísticas básicas?"
 - "Existem outliers nos dados?"
@@ -111,7 +121,9 @@ Faça perguntas em linguagem natural:
 - "Qual a distribuição da variável X?"
 
 ### 3. Visualizações Automáticas
+
 O sistema gera gráficos automaticamente:
+
 - Histogramas para distribuições
 - Heatmaps para correlações
 - Scatter plots para relações
@@ -120,9 +132,6 @@ O sistema gera gráficos automaticamente:
 ## 🧪 Testes
 
 ```bash
-# Executar bateria de testes
-python test_system.py
-
 # Testes manuais via API
 curl http://localhost:8000/api/health
 ```
@@ -130,6 +139,7 @@ curl http://localhost:8000/api/health
 ## 📊 Exemplos de Uso
 
 ### Dataset de Fraude de Cartão
+
 ```python
 # Exemplo de análise automática
 Pergunta: "Faça uma análise geral do dataset"
@@ -142,6 +152,7 @@ Resposta: "Baseado na análise do dataset carregado:
 ```
 
 ### Análise de Correlações
+
 ```python
 # Geração automática de heatmap
 Pergunta: "Mostre a correlação entre as variáveis"
@@ -155,34 +166,40 @@ Resposta: "Identificadas correlações significativas:
 ## 🔧 Configuração
 
 ### Variáveis de Ambiente
+
 ```bash
 # config.env
 MONGO_URL=mongodb://localhost:27017
 DB_NAME=agente_eda_db
 CORS_ORIGINS=http://localhost:3000
-EMERGENT_LLM_KEY=sua_chave_aqui
+GROQ_API_KEY=sua_chave_groq_aqui
 ```
 
 ### Personalização
+
 - Modifique `main.py` para ajustar análises
 - Edite `src/App.js` para customizar interface
-- Configure `requirements.txt` para dependências
+- Configure `requirements.txt` para dependências Python
+- Configure `package.json` para dependências React
 
 ## 📈 Funcionalidades Avançadas
 
 ### Análise Estatística
+
 - Estatísticas descritivas completas
 - Detecção de outliers (método IQR)
 - Análise de distribuições
 - Testes de normalidade
 
 ### Machine Learning
+
 - Análise de correlações
 - Detecção de padrões
 - Sugestões de features
 - Validação de dados
 
 ### Visualizações
+
 - Histogramas interativos
 - Matriz de correlação
 - Gráficos de dispersão
@@ -204,9 +221,9 @@ Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para de
 
 ## 👨‍💻 Autor
 
-**Fernando Meregali Xavier**
+### Fernando Meregali Xavier
+
 - GitHub: [@fermeregali](https://github.com/fermeregali)
-- LinkedIn: [fernando-meregali](https://linkedin.com/in/fernando-meregali)
 
 ## 🙏 Agradecimentos
 
@@ -218,10 +235,5 @@ Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para de
 ## 📚 Documentação Adicional
 
 - [API Documentation](http://localhost:8000/docs) - Documentação interativa da API
-- [Relatório Técnico](docs/relatorio-tecnico.md) - Documentação detalhada
-- [Guia de Contribuição](CONTRIBUTING.md) - Como contribuir
-- [Changelog](CHANGELOG.md) - Histórico de versões
 
 ---
-
-⭐ **Se este projeto foi útil, considere dar uma estrela!** ⭐
